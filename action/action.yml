@@ -1,0 +1,54 @@
+name: Autonomy shadow mode
+description: Classifies a PR into T1/T2/T3 from the actual diff and reports whether it would be eligible for automerge. Never merges or approves.
+inputs:
+  config:
+    description: Path to the policy file, read from the base commit.
+    default: .autonomy.yml
+  comment:
+    description: Post or update one sticky PR comment (needs pull-requests write).
+    default: 'true'
+  github-token:
+    description: Token used only to post the sticky comment.
+    default: ${{ github.token }}
+outputs:
+  tier:
+    description: Computed tier (T1, T2, T3).
+    value: ${{ steps.classify.outputs.tier }}
+  eligible:
+    description: Would be eligible for automerge (shadow only), true or false.
+    value: ${{ steps.classify.outputs.eligible }}
+  head-sha:
+    description: SHA the result applies to.
+    value: ${{ steps.classify.outputs.head-sha }}
+  json:
+    description: Compact JSON result for logging.
+    value: ${{ steps.classify.outputs.json }}
+runs:
+  using: composite
+  steps:
+    - id: classify
+      shell: bash
+      env:
+        AE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        AE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        AE_CONFIG: ${{ inputs.config }}
+        AE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        AE_PR_BODY: ${{ github.event.pull_request.body }}
+        AE_OUTPUT_FILE: ${{ runner.temp }}/autonomy-shadow.md
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs"
+    - if: inputs.comment == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        BODY_FILE: ${{ runner.temp }}/autonomy-shadow.md
+      run: |
+        # Sticky comment: update ours if it exists, otherwise create it. Only the issues comments API is used.
+        id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq '.[] | select(.user.login=="github-actions[bot]" and (.body | startswith("<!-- autonomy-shadow-mode -->"))) | .id' | head -n1)
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@"$BODY_FILE" >/dev/null
+        else
+          gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@"$BODY_FILE" >/dev/null
+        fi

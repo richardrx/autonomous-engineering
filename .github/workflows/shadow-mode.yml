@@ -1,0 +1,23 @@
+name: Autonomy shadow mode
+# Zero-risk: only reads the diff and posts one sticky comment. Never approves, merges or labels.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: shadow-mode-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # In your own repo use: richardrx/autonomous-engineering/action@main (pin a SHA in production)
+      - id: autonomy
+        uses: ./action
+      - run: echo '${{ steps.autonomy.outputs.json }}'

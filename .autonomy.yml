@@ -1,0 +1,42 @@
+# Autonomy policy for shadow mode.
+# Tiers: T1 = high risk or governance, T2 = medium, T3 = low risk and eligible.
+# The policy is read from the PR's BASE commit, so a PR cannot relax its own rules.
+# Rules can only RAISE risk. A label or "tier: T3" in the PR body can never lower it.
+
+# Tier for any file not listed below. T3 is not allowed here (conservative).
+default_tier: T2
+
+# Approved low-risk classes. A PR is eligible only if EVERY file matches one of these.
+t3_paths:
+  - docs/**
+  - "*.md"
+  - "**/*.test.{js,ts,mjs}"
+
+# Built-in T1 (always on, cannot be removed): AGENTS.md, CLAUDE.md, .cursor/,
+# .claude/, .github/, CODEOWNERS and .autonomy.yml itself.
+rules:
+  - tier: T1
+    reason: authentication, authorization or tenant isolation
+    paths: ["**/auth/**", "**/permissions/**", "**/middleware/**"]
+  - tier: T1
+    reason: payments, billing or subscriptions
+    paths: ["**/payments/**", "**/billing/**", "**/subscriptions/**"]
+  - tier: T1
+    reason: database migrations
+    paths: ["**/migrations/**", "**/*.sql", "prisma/schema.prisma"]
+  - tier: T1
+    reason: infrastructure and secrets
+    paths: ["infra/**", "terraform/**", "Dockerfile", "**/.env*"]
+  - tier: T2
+    reason: dependency changes
+    paths: [package.json, package-lock.json, pnpm-lock.yaml, yarn.lock]
+
+# Size thresholds (added + deleted lines, file count) raise the tier of the whole PR.
+size:
+  t3_max_lines: 100
+  t3_max_files: 10
+  t2_max_lines: 800
+  t2_max_files: 40
+
+# Tiers that would be eligible for automerge in shadow mode. Only T3 is meaningful.
+automerge_tiers: [T3]
