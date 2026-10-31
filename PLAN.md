@@ -1,231 +1,231 @@
-# Plano técnico: engenharia com agentes e autonomia proporcional ao risco
+# Technical plan: agent-driven engineering with risk-based autonomy
 
-> **Status:** proposta aberta para discussão e implementação gradual. Não representa um sistema pronto, validado, implantado ou uma auditoria de nenhum repositório específico.
+> **Status:** an open proposal for discussion and gradual implementation. This is not a finished, validated, or deployed system, nor an audit of any specific repository.
 >
-> **Público:** founders, engenheiros e times pequenos que querem usar agentes para implementar, revisar, testar e integrar mudanças com controles de risco.
+> **Audience:** founders, engineers, and small teams that want agents to implement, review, test, and merge changes within explicit risk controls.
 >
-> **Princípio operacional:** humanos decidem objetivos, limites e exceções importantes; agentes podem executar o trabalho verificável dentro desses limites.
+> **Operating principle:** humans decide goals, boundaries, and consequential exceptions. Agents can execute verifiable work inside those boundaries.
 
-## 1. Problema e objetivo
+## 1. The problem and the goal
 
-O volume de código produzido por agentes pode crescer mais rápido do que a capacidade humana de ler PRs. Exigir revisão e clique de merge de uma pessoa para toda mudança limita a autonomia; dispensar revisão indiscriminadamente transfere o custo para incidentes.
+Agents can produce code faster than humans can review pull requests. Requiring someone to review and click merge on every change limits autonomy. Removing reviews indiscriminately just moves the cost to production incidents.
 
-O objetivo é reduzir a **atenção humana necessária por alteração correta entregue**. Aumentar a taxa de automerge só é progresso se a taxa de regressões, reverts e incidentes permanecer dentro dos limites aprovados.
+The goal is to reduce **human attention required per correct change shipped**. A higher auto-merge rate only counts as progress if regressions, reverts, and incidents stay within approved limits.
 
-Este plano descreve um estado-alvo, suas dependências e uma implantação segura. Nenhuma configuração ilustrativa deve ser aplicada sem validação no repositório de destino.
+This plan describes a target architecture, its dependencies, and a safe way to roll it out. No illustrative configuration should be applied without validating it against the target repository.
 
-### Princípios
+### Principles
 
-1. **Risco determina supervisão.** O diff real importa mais que a intenção, o tamanho ou o rótulo do PR.
-2. **Evidência supera declarações.** Um agente deve anexar o resultado de testes e verificações, não apenas afirmar que passou.
-3. **Separação de poderes.** Quem implementa não pode afrouxar seus controles nem dispensar os próprios findings críticos.
-4. **Verificação vinculada ao código.** Revisões e aprovações precisam se referir ao HEAD SHA vigente e à base relevante.
-5. **Falhar fechado.** Ausência, falha ou indisponibilidade de um gate obrigatório impede automerge.
-6. **Rollback é parte do desenho.** A decisão de integração considera reversibilidade e observabilidade.
-7. **Autonomia cresce por evidência.** Cada expansão precisa mostrar que os controles funcionam.
-8. **Documentação é navegável e verificável.** Um índice curto aponta regras, exemplos aprovados e legados a evitar.
+1. **Risk determines supervision.** The actual diff matters more than the PR's stated intent, size, or label.
+2. **Evidence beats claims.** Agents must attach test and check results, not merely say they passed.
+3. **Separation of powers.** Implementers cannot weaken their own controls or dismiss their own critical findings.
+4. **Verification is tied to the code.** Reviews and approvals must refer to the current HEAD SHA and the relevant base.
+5. **Fail closed.** A missing, failed, or unavailable required gate blocks auto-merge.
+6. **Rollback is part of the design.** Merge authorization accounts for reversibility and observability.
+7. **Autonomy is earned through evidence.** Every expansion must demonstrate that the controls work.
+8. **Documentation must be navigable and verifiable.** A short entry point links to rules, approved examples, and legacy patterns to avoid.
 
-## 2. Política de risco
+## 2. Risk policy
 
-Os tiers abaixo são uma **convenção proposta**, e não uma classificação oficial de qualquer fornecedor.
+These tiers are **a proposed convention**, not an official classification from any vendor.
 
-| Tier | Padrão de supervisão | Exemplos possíveis | Integração |
+| Tier | Default oversight | Possible examples | Merge policy |
 | --- | --- | --- | --- |
-| **T3 — baixo risco** | Zero aprovações humanas **para classes previamente autorizadas** | Documentação não normativa, ajustes visuais isolados, pequenos testes adicionais | Automerge somente se elegível e com gates completos |
-| **T2 — médio risco** | Uma aprovação humana inicialmente | Funcionalidade comum, alteração de comportamento reversível, refatoração com testes | Merge operado por automação após autorização; isenções seletivas só depois de evidência |
-| **T1 — alto risco** | Uma ou duas aprovações humanas, conforme criticidade e política da equipe | Autorização, dados sensíveis, cobrança, mudanças destrutivas, infraestrutura crítica, governança dos agentes | Automação pode executar mecanicamente após todas as aprovações; nunca dispensá-las |
+| **T3 — low risk** | Zero human approvals **for previously authorized classes** | Non-normative documentation, isolated visual changes, small additional tests | Auto-merge only when eligible and every required gate passes |
+| **T2 — medium risk** | One human approval initially | Routine features, reversible behavior changes, refactoring backed by tests | Automation may merge after authorization; selective exemptions require evidence |
+| **T1 — high risk** | One or two human approvals depending on criticality and team policy | Authorization, sensitive data, billing, destructive changes, critical infrastructure, agent governance | Automation may perform the mechanical merge after all required approvals, but cannot waive them |
 
-### 2.1 Tier não equivale a elegibilidade
+### 2.1 Tier is not the same as eligibility
 
-Um PR T3 ainda pode ficar fora do automerge. Exemplos:
+A T3 PR can still be ineligible for auto-merge. For example, when it:
 
-- Altera a configuração ou a identidade do próprio agente.
-- Modifica instruções, critérios de avaliação ou verificações de segurança.
-- Afeta um contrato compartilhado, um fluxo sensível ou um arquivo sem cobertura suficiente.
-- Contém dependência externa, migração ou comportamento difícil de reverter.
-- Não possui revisão independente confiável, CI ou evidência de segurança.
-- É grande demais ou tem escopo misto para a classe de mudanças autorizada.
+- Changes the agent's own configuration or identity.
+- Modifies instructions, evaluation criteria, or security checks.
+- Affects a shared contract, sensitive workflow, or code with insufficient coverage.
+- Introduces an external dependency, migration, or behavior that's hard to reverse.
+- Lacks reliable independent review, CI, or security evidence.
+- Has too many unrelated changes, or a scope too broad for its authorized class.
 
-**Regra de precedência:** a classificação final é o maior risco identificado entre arquivos, conteúdo do diff, dependências e efeitos sobre o sistema. O tier declarado pelo autor não pode reduzi-la.
+**Precedence rule:** the final tier is the highest risk found across the files, diff contents, dependencies, and system impact. An author's declared tier cannot lower it.
 
-### 2.2 Sinais para classificação
+### 2.2 Risk signals
 
-Avaliar, pelo menos:
+Assess at least:
 
-- Caminhos tocados e natureza da alteração (incluindo arquivos removidos e renomeados).
-- Mudanças em filtros de acesso, consultas multi-tenant e autorização.
-- Dinheiro, autenticação, credenciais, privacidade e integrações críticas.
-- Contratos de API, schemas, migrations, configuração de deploy e permissões.
-- Estado global, middleware, hooks e inicialização da aplicação.
-- Dependências, lockfiles e scripts executados pelo CI.
-- Governança: rulesets, CODEOWNERS, workflows, policies, prompts e código dos gates.
-- Reversibilidade, cobertura de testes, superfície exposta e tamanho do raio de impacto.
+- Touched paths and the nature of each change, including removed and renamed files.
+- Access filters, multi-tenant queries, and authorization changes.
+- Money, authentication, credentials, privacy, and critical integrations.
+- API contracts, schemas, migrations, deployment configuration, and permissions.
+- Global state, middleware, hooks, and application initialization.
+- Dependencies, lockfiles, and scripts executed by CI.
+- Governance: rulesets, CODEOWNERS, workflows, policies, prompts, and gate code.
+- Reversibility, test coverage, exposed surface area, and blast radius.
 
-Não basear toda a classificação em regex do diff. Regras estáticas cobrem sinais objetivos; casos sem resolução segura devem subir de tier ou receber classificação humana.
+Don't base the entire classification on regexes over the diff. Static rules are useful for objective signals. Cases that cannot be classified safely must be escalated to a higher tier or to a human.
 
-### 2.3 Autorização humana vs. execução do merge
+### 2.3 Human authorization versus executing a merge
 
-São ações distintas: implementar, revisar tecnicamente, aprovar o risco e executar o merge. Um bot pode operar o merge **após** a aprovação exigida. Isso não converte a aprovação em autônoma.
+These are separate actions: implementing, reviewing code, approving risk, and executing the merge. A bot may perform the merge **after** the required human approval. That does not make the approval autonomous.
 
-## 3. Permissões e proteção das regras
+## 3. Permissions and protecting the rules
 
-A arquitetura separa quatro papéis:
+The architecture separates four roles:
 
-| Papel | Pode | Não pode |
+| Role | Can do | Cannot do |
 | --- | --- | --- |
-| Agente implementador | Editar código autorizado, executar testes, abrir e atualizar PR | Alterar governança protegida ou dispensar bloqueadores |
-| Agente revisor | Inspecionar diff e evidências, emitir findings e parecer independente | Aprovar o próprio trabalho ou se passar por humano |
-| Controlador / automação de merge | Validar políticas e produzir status; integrar PR expressamente autorizado | Ignorar proteção de branch ou aceitar evidência vencida |
-| Responsável humano | Definir política, aprovar alto risco, julgar exceções e incidentes | — |
+| Implementing agent | Edit authorized code, run tests, open and update PRs | Change protected governance or dismiss blockers |
+| Reviewing agent | Inspect the diff and evidence, report findings, issue an independent verdict | Approve its own work or impersonate a human |
+| Controller / merge automation | Validate policy, publish status, merge explicitly authorized PRs | Bypass branch protection or accept stale evidence |
+| Human owner | Define policy, approve high-risk changes, decide exceptions and incident response | — |
 
-### 3.1 Proteção em camadas
+### 3.1 Defense in depth
 
-Nenhum arquivo que controle a avaliação dos agentes deve poder ser enfraquecido por um PR normal de baixo risco. Identificar e proteger, conforme o repositório:
+No file that controls how agents are evaluated should be weakened by a routine, low-risk PR. Identify and protect, as applicable:
 
-- `AGENTS.md`, `CLAUDE.md` e instruções equivalentes em subdiretórios.
-- Documentos de arquitetura normativos, políticas, critérios de revisão e referências aprovadas.
-- Skills que ensinam regras obrigatórias.
-- Configuração do controlador, rubrica, classificador e testes de regressão.
-- `.github/workflows/`, `.github/CODEOWNERS`, rulesets e configuração de automerge.
-- Scripts de lint, scanners e testes que validam as políticas acima.
+- `AGENTS.md`, `CLAUDE.md`, and equivalent instructions in subdirectories.
+- Normative architecture documents, policies, review criteria, and approved references.
+- Skills that encode mandatory rules.
+- Controller configuration, scoring rubrics, classifiers, and regression tests.
+- `.github/workflows/`, `.github/CODEOWNERS`, rulesets, and auto-merge configuration.
+- Lint scripts, scanners, and tests that enforce these policies.
 
-**CODEOWNERS não é proteção suficiente por si só.** Validar as regras reais de branch, os checks obrigatórios, a política de aprovações e a permissão efetiva dos bots.
+**CODEOWNERS alone is not sufficient protection.** Verify actual branch rules, required checks, approval policies, and the effective permissions of bot accounts.
 
-Uma implementação pode usar mecanismos equivalentes a `protectedPaths`, CODEOWNERS e um required check — mas eles devem ser independentes do código que o próprio PR tenta alterar. Um PR não pode substituir seu validador por uma versão mais fraca e, então, ser avaliado por essa versão.
+An implementation can combine equivalents of `protectedPaths`, CODEOWNERS, and a required check. But the enforcement must not depend on code modified by the same PR being evaluated. A PR must not be able to replace its own validator with a weaker one and then pass that validator.
 
-### 3.2 Identidade e confiança
+### 3.2 Identity and trust
 
-Automerge não depende apenas do tipo de mudança. Exigir identidade conhecida, privilégios mínimos, permissões explícitas para cada função e trilha de auditoria. Um login de bot desconhecido deve falhar fechado.
+Auto-merge depends on more than the change type. Require known identities, least-privilege access, explicit permissions for each role, and an audit trail. Unknown bot identities must fail closed.
 
-## 4. Pipeline de uma mudança
+## 4. The change pipeline
 
-| Etapa | Responsável | Evidência / saída | Falha ou escalonamento |
+| Stage | Owner | Evidence / output | Failure or escalation |
 | --- | --- | --- | --- |
-| 1. Especificar intenção | Humano ou sistema autorizado | Objetivo, critérios de aceite, contexto e escopo | Requisitos incompletos → esclarecer |
-| 2. Classificar risco inicial | Classificador | Tier preliminar e motivos | Incerteza material → tier maior |
-| 3. Implementar | Agente implementador | Diff pequeno, branch isolada, testes | Falha repetida → humano |
-| 4. Verificar localmente | Agente + ferramentas | Comandos executados, logs e testes | Check não rodado não vira sucesso |
-| 5. Revisar o diff | Outro agente/contexto independente | Findings com arquivo, linha, gravidade e correção | Problema crítico → bloquear |
-| 6. Revisar segurança | Revisor/pipeline de segurança | Parecer de riscos relevantes | Indisponível → bloquear automerge |
-| 7. Corrigir | Agente implementador | Novo diff e registros de resolução | Máximo de rodadas → escalonar |
-| 8. Reclassificar | Classificador | Tier final baseado no diff final | Tier aumentado → mais aprovações |
-| 9. Validar evidências | Controlador | CI, review, findings, SHA, identidade, base | Evidência velha/incompleta → bloquear |
-| 10. Validar regras do GitHub | GitHub + controlador | Rulesets, aprovação, branch atualizada | Falha/conflito → bloquear |
-| 11. Integrar | Automação autorizada ou humano | Merge auditável; preferir fila/revalidação quando disponível | Mudança de HEAD/base → revalidar |
-| 12. Observar | Telemetria + responsável operacional | Regressões, reverts, incidentes, tempo de recuperação | Circuit breaker e rollback |
+| 1. Define the change | Human or authorized system | Goal, acceptance criteria, context, and scope | Incomplete requirements → clarify |
+| 2. Classify initial risk | Classifier | Preliminary tier and reasons | Material uncertainty → higher tier |
+| 3. Implement | Implementing agent | Small diff, isolated branch, tests | Repeated failure → human |
+| 4. Run local checks | Agent + tools | Commands, logs, and test results | A skipped check is not a pass |
+| 5. Review the diff | Separate agent / independent context | Findings with file, line, severity, and fix | Critical problem → block |
+| 6. Review security | Security reviewer / pipeline | Verdict on relevant risks | Unavailable → block auto-merge |
+| 7. Fix findings | Implementing agent | Updated diff and resolution records | Review limit reached → escalate |
+| 8. Reclassify | Classifier | Final tier from the final diff | Higher tier → more approvals |
+| 9. Validate evidence | Controller | CI, reviews, findings, SHA, identity, base | Stale/incomplete evidence → block |
+| 10. Check GitHub rules | GitHub + controller | Rulesets, approvals, current branch state | Failure/conflict → block |
+| 11. Merge | Authorized automation or human | Auditable merge; prefer a queue / revalidation when available | HEAD/base change → revalidate |
+| 12. Monitor | Telemetry + operational owner | Regressions, reverts, incidents, recovery time | Circuit breaker and rollback |
 
-### 4.1 Máquina de estados mínima
+### 4.1 Minimal state machine
 
 `DISCOVERED → PLANNED → IMPLEMENTING → REVIEWING → FIXING → VALIDATED → MERGED → OBSERVED`
 
-Estados de exceção: `BLOCKED`, `NEEDS_HUMAN`, `REVERTED`. São uma sugestão de modelagem, não um contrato de software pronto.
+Exception states: `BLOCKED`, `NEEDS_HUMAN`, `REVERTED`. This is a suggested model, not an implemented software contract.
 
-O controlador registra transições, motivo, agente responsável, SHA de referência e evidências. Alterar o HEAD SHA invalida pareceres, checks e aprovações que exigem o SHA anterior. Atualizações na base precisam provocar a revalidação adequada antes da integração.
+The controller records transitions, reasons, the responsible agent, reference SHA, and evidence. A change to HEAD SHA invalidates reviews, checks, and approvals that require the previous SHA. Changes to the base must trigger appropriate revalidation before merging.
 
-### 4.2 Limite da revisão iterativa
+### 4.2 Limit review loops
 
-- Primeira revisão: todo o diff e impacto no sistema.
-- Revisões posteriores: concentrar no diff novo e nos problemas anteriores, sem perder regressões relevantes.
-- Deduplicar findings e exigir resolução explícita.
-- Máximo inicial sugerido: **três rodadas**; depois, escalonamento humano.
-- Não tratar nit de estilo como bloqueador de segurança.
+- First review: the full diff and its impact on the system.
+- Subsequent reviews: focus on the new diff and outstanding findings without ignoring relevant regressions.
+- Deduplicate findings and require explicit resolution.
+- Suggested starting limit: **three rounds**, then escalate to a human.
+- Don't treat style nits as security blockers.
 
-## 5. Gates de qualidade e segurança
+## 5. Quality and security gates
 
-Os nomes abaixo são categorias de verificação. Cada projeto precisa mapear a regra ao comando real e registrar se o check é obrigatório.
+The names below are categories of checks. Each project must map them to actual commands and record whether each check is required.
 
-| Verificação | Como comprovar | Comportamento seguro |
+| Check | Evidence | Safe behavior |
 | --- | --- | --- |
-| Formatação e lint | Execução do projeto | Falha impede integração |
-| Tipos / build | Comandos específicos da stack | Falha impede integração |
-| Testes | Unitários, integração e regressão aplicáveis | Check não rodado não é verde |
-| Contratos | Artefatos gerados sem drift | Divergência exige correção |
-| Dependências | Licenças, vulnerabilidades e mudanças sensíveis | Crítico bloqueia; exceção com aprovação registrada |
-| Segredos | Varredura configurada em CI e/ou plataforma | Vazamento confirmado bloqueia |
-| Segurança de aplicação | Autorização, tenant, dados sensíveis, entrada externa | Finding bloqueante impede automerge |
-| Política de risco | Tier e elegibilidade pelo diff final | Falha/indeterminação impede automerge |
-| Revisão independente | Parecer válido ligado ao SHA | Ausência impede automerge |
-| GitHub | Checks, aprovações, permissões, proteção de branch | Condições não atendidas impedem merge |
+| Formatting and lint | The project's actual commands | Failure blocks merge |
+| Types / build | Stack-specific commands | Failure blocks merge |
+| Tests | Applicable unit, integration, and regression tests | Not run does not mean green |
+| Contracts | Generated artifacts without drift | Differences require a fix |
+| Dependencies | Licenses, vulnerabilities, and sensitive changes | Critical issues block; exceptions need recorded approval |
+| Secrets | Scanning configured in CI and/or on the platform | Confirmed exposure blocks |
+| Application security | Authorization, tenant isolation, sensitive data, external input | Blocking finding prevents auto-merge |
+| Risk policy | Final tier and eligibility based on the diff | Failure/uncertainty prevents auto-merge |
+| Independent review | Valid verdict tied to the SHA | Absence prevents auto-merge |
+| GitHub | Checks, approvals, permissions, branch protection | Unmet requirements block merge |
 
-**Não prometer uma cobertura que o gate não oferece.** Exemplo: um linter que proíbe import de `*.png` não detecta necessariamente um novo `.png` que ninguém importou. Diferenciar CI, hook local e revisão apenas manual.
+**Don't claim coverage a gate doesn't provide.** For example, a linter that forbids importing `*.png` does not necessarily catch a new `.png` that isn't imported anywhere. Distinguish CI checks, local hooks, and manual review.
 
-### 5.1 Findings e exceções
+### 5.1 Findings and exceptions
 
-Cada finding deve conter: identificação estável, severidade, arquivo e linha (quando aplicável), descrição verificável, consequência, correção proposta e estado da resolução.
+Every finding should include a stable ID, severity, file and line where applicable, verifiable description, consequence, proposed fix, and resolution status.
 
-Findings de segurança ou dados com severidade bloqueante não podem ser dispensados unilateralmente pelo mesmo agente que escreveu a alteração. Exceções têm responsável, justificativa e prazo ou condição de reavaliação.
+Blocking security or data findings cannot be dismissed unilaterally by the agent that authored the change. Exceptions need an owner, justification, and deadline or condition for re-evaluation.
 
-### 5.2 Checklist de convenção reproduzível
+### 5.2 Reproducible convention checklist
 
-O revisor registra para cada critério aprovado:
+For each approved criterion, the reviewer records:
 
-- `cumpre`: evidência concreta no diff.
-- `viola`: evidência e finding relacionado.
-- `N/A`: justificativa de não aplicabilidade.
+- `pass`: concrete evidence in the diff.
+- `violation`: evidence and a linked finding.
+- `N/A`: explanation of why the criterion does not apply.
 
-Exemplo de rubrica adaptável: arquitetura, contrato, autorização, isolamento de dados, persistência/transações, erros, testabilidade, migrations, cobertura de teste, uso dos clientes de API, separação de lógica de UI, reutilização de regras de negócio, segredos, observabilidade e clareza documental.
+An adaptable example rubric: architecture, contracts, authorization, data isolation, persistence/transactions, error handling, testability, migrations, test coverage, use of API clients, separation of UI logic, reuse of business rules, secrets, observability, and documentation clarity.
 
-**Não adotar essa lista como norma automaticamente.** Cada organização deve aprovar os critérios vigentes; novos critérios não pontuam até serem aceitos.
+**Don't adopt this list as policy automatically.** Each organization must approve the applicable criteria. New criteria do not count until accepted.
 
-Se for necessária uma nota de 0 a 15:
+If a score from 0 to 15 is needed:
 
-`nota = floor(15 × número de itens cumpridos / número de itens aplicáveis)`
+`score = floor(15 × passed items / applicable items)`
 
-Regras adicionais:
+Additional rules:
 
-1. Exigir **exatamente todos os critérios vigentes**, com IDs únicos, sem omissões nem duplicatas.
-2. Validar `cumpre`, `viola` e `N/A` e a evidência em cada entrada.
-3. Vincular cada `viola` a um finding específico, sem apenas comparar contagens.
-4. Recalcular a nota no controlador; não confiar em número fornecido pelo LLM.
-5. Zero critérios aplicáveis → **escalonamento humano**, não pontuação máxima.
-6. Registrar a versão da rubrica usada para avaliar cada diff.
+1. Require **every active criterion**, exactly once, with unique IDs and no omissions.
+2. Validate `pass`, `violation`, and `N/A` and the evidence for every entry.
+3. Link each `violation` to a specific finding; comparing counts is not enough.
+4. Recalculate the score in the controller. Don't trust a number supplied by an LLM.
+5. Zero applicable criteria → **human escalation**, not a perfect score.
+6. Record which version of the rubric was used to evaluate each diff.
 
-Uma possível pontuação geral de qualidade (exemplo, não padrão obrigatório) combina: fidelidade à intenção 25, testes 25, risco/raio de impacto 20, convenção 15 e simplicidade 15. O controlador deve validar a soma e mínimos independentes, não apenas aceitar um total declarado.
+One possible overall quality score (example, not a required standard) combines fidelity to the task 25, tests 25, blast radius 20, conventions 15, and simplicity 15. The controller must validate the sum and individual minimums instead of accepting the declared total.
 
-### 5.3 Atualização compatível do contrato do revisor
+### 5.3 Backward-compatible reviewer contract changes
 
-Se o parecer de agentes é um contrato JSON estrito, não mude o prompt e o validador de uma vez sem compatibilidade:
+If agent reviews use a strict JSON contract, don't change the prompt and validator simultaneously without compatibility:
 
-1. **Expandir:** o sistema recebe o campo novo opcionalmente e registra sua qualidade.
-2. **Migrar:** o revisor passa a emitir o novo campo; comparar resultados em shadow mode.
-3. **Exigir:** apenas depois da validação o campo passa a ser obrigatório para aprovar.
+1. **Expand:** accept the new field as optional and record its quality.
+2. **Migrate:** start emitting the new field and compare results in shadow mode.
+3. **Enforce:** make the field mandatory for approvals only after validation.
 
-Planejar rollback, versionamento do contrato e testes com pareceres das versões anterior e nova.
+Plan for rollback, contract versioning, and tests covering both the old and new verdict formats.
 
-## 6. Política de automerge
+## 6. Auto-merge policy
 
-A integração automática é uma **decisão de autorização**, não uma consequência automática do label T3. Calcular `eligibleForAutomerge` após todos os checks e reavaliá-la no momento do merge.
+Automatic merging is an **authorization decision**, not an automatic consequence of a T3 label. Compute `eligibleForAutomerge` only after all checks, and re-evaluate it at merge time.
 
-### 6.1 Invariantes de autorização
+### 6.1 Authorization invariants
 
-Um PR só pode integrar automaticamente quando **todas** forem verdadeiras:
+A PR may merge automatically only when **all** of these are true:
 
-1. A classe de mudança foi expressamente autorizada na política vigente.
-2. Tier final foi calculado a partir do diff completo; caminho protegido bloqueia autonomia.
-3. Identidade do agente está autorizada para a função.
-4. Implementador e revisor são independentes conforme a política aprovada.
-5. CI obrigatório terminou com sucesso no SHA vigente.
-6. Revisão técnica e revisão de segurança obrigatórias foram concluídas.
-7. Não existe finding ou conversa bloqueante pendente.
-8. Aprovações humanas exigidas pelo tier foram registradas na versão correta.
-9. HEAD SHA e base relevante permanecem válidos e revalidados.
-10. O token de execução tem permissão mínima; o GitHub aplica suas proteções.
-11. O kill switch está desligado e nenhum circuit breaker está ativo.
-12. Reversibilidade, rollout e observabilidade atendem às exigências da classe.
+1. Its change class is explicitly authorized by the current policy.
+2. Its final tier is calculated from the complete diff; touching protected paths blocks autonomous merging.
+3. The agent's identity is authorized for its role.
+4. Implementer and reviewer are independent as required by policy.
+5. All required CI checks succeeded on the current SHA.
+6. Required technical and security reviews are complete.
+7. No blocking finding or unresolved blocking discussion remains open.
+8. All human approvals required by the tier have been recorded for the correct revision.
+9. HEAD SHA and the relevant base remain valid and have been revalidated.
+10. The execution token has minimal permissions; GitHub enforces its protections.
+11. The kill switch is off and no circuit breaker is active.
+12. Reversibility, rollout, and observability meet the requirements of the change class.
 
-**Qualquer condição ausente, desconhecida ou falsa → sem automerge.**
+**If any required condition is missing, unknown, or false → no auto-merge.**
 
-### 6.2 Exemplo ilustrativo de configuração
+### 6.2 Illustrative configuration
 
-Este YAML é um **esboço de política**, não um arquivo funcional que você possa copiar para o GitHub Actions:
+This YAML is a **policy sketch**, not a working file you can paste into GitHub Actions:
 
 ```yaml
 mode: shadow                   # shadow | controlled | paused
 automerge:
-  enabled: false               # habilitação depende de decisão humana
-  tiers: [T3]                  # permitido pela política, não ativado
-  allowed_change_classes: []  # vazio até aprovar classes específicas
-  trusted_identities: []      # preenchido após validação de permissões
+  enabled: false               # requires an explicit human decision
+  tiers: [T3]                  # permitted by policy, not enabled
+  allowed_change_classes: []  # empty until specific classes are approved
+  trusted_identities: []      # populated after checking permissions
   require_independent_review: true
   require_security_evidence: true
   require_current_sha: true
@@ -239,157 +239,157 @@ rollout:
   kill_switch: false
 ```
 
-A lista vazia de classes elegíveis deve impedir automerge mesmo que alguém altere `mode` por engano. Uma implementação real requer avaliação da política em um required check e validação de permissões no GitHub.
+An empty list of eligible classes must prevent auto-merge even if someone changes `mode` by mistake. A real implementation needs policy evaluation in a required check and verified GitHub permissions.
 
-### 6.3 Limitações da plataforma
+### 6.3 Platform limitations
 
-Não assumir que `CODEOWNERS` sozinho imponha a política. GitHub branch protection e rulesets, aprovações obrigatórias, bypass, contas bot, status checks e merge queue devem ser verificados na configuração real.
+Don't assume CODEOWNERS enforces the policy by itself. Verify GitHub branch protection and rulesets, required approvals, bypass permissions, bot accounts, status checks, and merge queue against the actual repository configuration.
 
-Se a plataforma não conseguir expressar a matriz por tier, usar um **status check obrigatório** calculado pelo controlador a partir de evidências autorizadas. Não conceder a um bot bypass irrestrito como substituto da política.
+If the platform cannot express the tier matrix directly, use a **required status check** calculated by the controller from authorized evidence. Don't give a bot unrestricted bypass permissions as a substitute for policy.
 
-## 7. Runbooks e rollback
+## 7. Runbooks and rollback
 
-### 7.1 Falhar fechado
+### 7.1 Fail closed
 
-Suspender automaticamente **a possibilidade de automerge** se houver:
+Automatically suspend **eligibility for auto-merge** if any of these occur:
 
-- Falha ou ausência de CI, revisão independente ou verificação de segurança.
-- Dados de SHA/base inconsistentes.
-- Falha de identidade, permissão ou leitura de políticas.
-- Aumento relevante de incidentes ou reverts da classe autorizada.
-- Incapacidade de observar comportamento de produção após a mudança.
+- Missing or failed CI, independent review, or security checks.
+- Inconsistent SHA/base information.
+- Failures involving identity, permissions, or policy retrieval.
+- A material increase in incidents or reverts for an authorized change class.
+- Loss of the ability to observe production behavior after a change.
 
-O sistema deve preservar os PRs para análise humana, não apagá-los.
+Keep PRs available for human review; don't delete them.
 
-### 7.2 Reversão de mudanças
+### 7.2 Reverting changes
 
-Cada classe elegível precisa definir: detecção, responsável, runbook, mecanismo de rollback, tratamento de dados e confirmação pós-reversão. Feature flag pode reduzir impacto, mas não reverte automaticamente alterações de dados ou efeitos externos.
+Every eligible change class must define detection, ownership, runbook, rollback mechanism, data handling, and post-revert confirmation. Feature flags can reduce the impact, but they don't automatically undo data changes or external effects.
 
-Um rollback automático só é seguro quando o gatilho, o efeito e a reversibilidade foram realmente testados. Caso contrário, o sistema bloqueia novas integrações e escala a resposta.
+Automatic rollback is safe only when the trigger, effect, and reversibility have actually been tested. Otherwise, block new merges and escalate the response.
 
-### 7.3 Aprender com incidentes
+### 7.3 Learn from incidents
 
-Para cada regressão relevante atribuída a alterações de agentes:
+For every material regression attributed to an agent-produced change:
 
-1. Registrar causa e linha do tempo sem confiar apenas no parecer anterior.
-2. Identificar o gate ausente ou ineficaz.
-3. Criar um teste negativo reproduzível.
-4. Corrigir lint, contrato, instrução ou teste onde fizer mais sentido.
-5. Suspender a classe de automerge envolvida até a nova verificação ser validada.
+1. Record the cause and timeline. Don't rely solely on the previous review verdict.
+2. Identify the missing or ineffective gate.
+3. Create a reproducible negative test.
+4. Fix the lint rule, contract, instruction, or test where it makes the most sense.
+5. Suspend the affected auto-merge class until the new check is validated.
 
-## 8. Implantação gradual
+## 8. Gradual rollout
 
-| Fase | O que muda | Evidência de aceite |
+| Phase | What changes | Acceptance evidence |
 | --- | --- | --- |
-| **0. Baseline** | Mapear regras, permissões, volume, incidentes e cobertura real dos checks | Inventário verificável; riscos desconhecidos registrados |
-| **1. Governança** | Proteger instruções e gates; corrigir conflitos de policy | Testes de caminhos protegidos; revisão humana |
-| **2. Documentação navegável** | Criar índice de instruções, critérios, exemplos reais e catálogo de legados | Referências válidas, status real dos gates, sem normas contraditórias |
-| **3. Revisão confiável** | Separar implementador/revisor, validar parecer e segurança | Testes de contrato, SHA, findings e identidade |
-| **4. Shadow mode** | Simular autorização de automerge, **sem** executar merge | Divergências com decisões humanas analisadas |
-| **5. T3 controlado** | Autorizar uma ou poucas classes T3 após aprovação humana da política | Gates, GitHub, rollback e telemetria testados |
-| **6. Expansão T3** | Expandir apenas para classes com histórico suficiente | Sem aumento incompatível de incidentes/reverts |
-| **7. T2 seletivo** | Avaliar isenção de aprovação humana por classe | Segurança, confiabilidade e responsabilidade demonstradas |
-| **8. Reavaliação contínua** | Ajustar regras por incidentes e dados | Redução sustentada de tempo humano sem deteriorar qualidade |
+| **0. Baseline** | Map rules, permissions, volume, incidents, and actual check coverage | Verifiable inventory; unknown risks documented |
+| **1. Governance** | Protect instructions and gates; resolve conflicting policies | Protected-path tests; human review |
+| **2. Navigable documentation** | Create an instructions index, criteria, real examples, and a legacy-pattern catalog | Valid references, actual gate status, no contradictory rules |
+| **3. Reliable review** | Separate implementer/reviewer, validate verdicts and security | Contract, SHA, findings, and identity tests |
+| **4. Shadow mode** | Simulate auto-merge authorization **without merging** | Disagreements with human decisions analyzed |
+| **5. Controlled T3** | Approve one or a few T3 change classes after humans approve the policy | Gates, GitHub, rollback, and telemetry tested |
+| **6. T3 expansion** | Expand only to classes with sufficient history | No unacceptable increase in incidents/reverts |
+| **7. Selective T2** | Evaluate waiving individual human approval by change class | Demonstrated safety, reliability, and accountability |
+| **8. Continuous reassessment** | Adjust rules using incidents and measurements | Sustained reduction in human time without quality degradation |
 
-**Não especificar um percentual obrigatório de automerge.** Estabelecer limites operacionais e observar consequências. Novas categorias de mudança entram em shadow mode antes de receberem autonomia.
+**Don't set a mandatory auto-merge percentage.** Set operational limits and measure the consequences. New change categories should run in shadow mode before they become eligible.
 
-## 9. Testes de aceitação do sistema
+## 9. System acceptance tests
 
-Os testes abaixo são especificações propostas. Eles não foram executados pelo simples fato de constarem neste plano.
+These are proposed test specifications. They have not been executed simply because they're listed in this plan.
 
-| ID | Cenário | Resultado esperado |
+| ID | Scenario | Expected result |
 | --- | --- | --- |
-| AT-01 | Agente implementa pequena funcionalidade com testes | Segue as convenções e apresenta evidências reais |
-| AT-02 | Agente implementa interface com acesso a API | Mantém contrato e separa lógica testável |
-| AT-03 | Revisor recebe violação deliberada de autorização | Finding bloqueante com evidência; não aprova |
-| AT-04 | Agente tenta modificar a própria política de revisão | PR não entra em fluxo autônomo; governança exige humano |
-| AT-05 | PR T3 autorizado passa por todos os gates | Integra sem aprovação humana, após validação final |
-| AT-06 | PR T3 tem revisão de segurança indisponível | Não integra automaticamente |
-| AT-07 | PR T2 sem isenção aprovada tenta automerge | Exige uma aprovação humana válida |
-| AT-08 | PR T1 tenta se declarar T3 | Tier calculado prevalece; bloqueia autonomia |
-| AT-09 | Novo commit aparece depois do parecer | Evidências antigas são invalidadas |
-| AT-10 | Mesmo agente implementa e revisa | Falha a regra de independência, quando exigida |
-| AT-11 | Checklist possui item duplicado ou omitido | Parecer rejeitado, sem CQS válido |
-| AT-12 | Checklist tem apenas critérios N/A | Escalonamento humano explícito |
-| AT-13 | Revisores repetem os mesmos findings | Limite de rodadas e escalonamento |
-| AT-14 | Required check falha ou some | Automerge bloqueado |
-| AT-15 | Conta não autorizada tenta integrar | Permissão negada / gate bloqueia |
-| AT-16 | Kill switch acionado | Nenhum novo automerge |
-| AT-17 | PR toca arquivo de instrução localizado | Governança protegida, independentemente do tier declarado |
-| AT-18 | Simulação de incidente após integração | Classe suspensa, registro de evidência e resposta executada |
+| AT-01 | Agent builds a small feature with tests | Follows conventions and provides actual evidence |
+| AT-02 | Agent builds a UI that accesses an API | Preserves contracts and separates testable logic |
+| AT-03 | Reviewer receives a deliberate authorization violation | Blocking finding with evidence; does not approve |
+| AT-04 | Agent attempts to modify its own review policy | PR is excluded from autonomous flow; human governance required |
+| AT-05 | Authorized T3 PR passes all required gates | Merges without human approval after final validation |
+| AT-06 | T3 PR has no available security review | Does not auto-merge |
+| AT-07 | T2 PR without an approved exemption attempts auto-merge | Requires one valid human approval |
+| AT-08 | T1 PR declares itself T3 | Computed tier prevails; autonomous merge blocked |
+| AT-09 | New commit arrives after review | Previous evidence is invalidated |
+| AT-10 | Same agent implements and reviews | Independence check fails when required |
+| AT-11 | Checklist has duplicate or missing criteria | Verdict rejected; no valid quality score |
+| AT-12 | Checklist marks every criterion N/A | Explicit human escalation |
+| AT-13 | Reviewers repeatedly report the same findings | Review-round limit and escalation |
+| AT-14 | Required check fails or disappears | Auto-merge blocked |
+| AT-15 | Unauthorized account attempts to merge | Permission denied / gate blocks |
+| AT-16 | Kill switch is activated | No new auto-merges |
+| AT-17 | PR changes a localized instruction file | Governance protection applies regardless of declared tier |
+| AT-18 | Simulated incident after merge | Change class suspended, evidence logged, incident response executed |
 
-Para comparar evolução, repetir tarefas em condições controladas, com os mesmos prompts, entradas e critérios. Registrar comandos, resultados, versão de política e SHA; não atribuir resultados ao projeto sem executá-los.
+To compare progress, repeat the same tasks under controlled conditions with identical prompts, inputs, and criteria. Record commands, results, policy version, and SHA. Don't claim the project achieved outcomes that haven't been tested.
 
-## 10. Métricas e critérios de expansão
+## 10. Metrics and expansion criteria
 
-Medir por tier, categoria e identidade de agente:
+Measure by tier, change category, and agent identity:
 
-- Porcentagem de PRs integrados sem intervenção humana.
-- Minutos humanos por PR e por mudança entregue sem regressão.
-- Número de aprovações e comentários humanos por PR.
-- Tempo em fila entre PR pronto e merge.
-- Rodadas e custo de revisão entre agentes.
-- Percentual de reverts e incidentes atribuíveis à mudança.
-- Detecção, mitigação e tempo de recuperação de regressões.
-- Findings falsos positivos e problemas escapados dos revisores.
-- Taxa de PRs bloqueados pelo gate e motivos.
+- Percentage of PRs merged without human intervention.
+- Human minutes per PR and per change shipped without regression.
+- Number of human approvals and comments per PR.
+- Time in queue between PR ready and merge.
+- Number and cost of review rounds between agents.
+- Percentage of reverts and incidents attributable to the change.
+- Detection, mitigation, and recovery time for regressions.
+- False-positive findings and problems missed by reviewers.
+- Percentage of PRs blocked by a gate, including reasons.
 
-**Métrica primária:** quantidade de mudanças corretas entregues por hora humana. **Guardrails:** incidente, revert, indisponibilidade, exposição de dados e custo de retrabalho. Sem baseline não há comparação honesta.
+**Primary metric:** correct changes shipped per human hour. **Guardrails:** incidents, reverts, downtime, data exposure, and rework cost. Without a baseline, there is no honest comparison.
 
-A expansão depende de decisão humana sobre os dados e da qualidade da amostra; não deve ser automatizada apenas porque uma porcentagem arbitrária foi atingida.
+Expansion requires human judgment about the data and sample quality. Don't automate it just because an arbitrary percentage was reached.
 
-## 11. Documentação e exemplos aprovados
+## 11. Documentation and approved examples
 
-Agentes tendem a reutilizar o código que encontram. O repositório deve indicar explicitamente o que serve e o que não serve de modelo:
+Agents tend to reuse the code they find. The repository should tell them explicitly what to copy and what not to copy:
 
-- Um `AGENTS.md` curto aponta para regras específicas, comandos e responsabilidade.
-- Referências de arquitetura apontam para **arquivos reais avaliados** no próprio projeto, com: *o que copiar*, *o que não copiar*, *evidência* e *quando a referência deixa de valer*.
-- Um catálogo de legados aponta características problemáticas específicas; não condena um arquivo inteiro por idade ou tamanho.
-- A mudança no arquivo de referência aciona revisão da ficha correspondente.
-- Instruções para diferentes ferramentas devem ser testadas; não supor que todas leem ou importam os mesmos arquivos.
-- Toda regra deve informar se é aplicada em CI, apenas em PR de agente, em hook local ou se depende de avaliação manual.
+- A short `AGENTS.md` points to specific rules, commands, and responsibilities.
+- Architecture references link to **real, reviewed files** in the project, with: *what to copy*, *what not to copy*, *evidence*, and *when the reference becomes invalid*.
+- A legacy catalog identifies specific problematic characteristics. It doesn't condemn a file solely because it's old or long.
+- Changes to a referenced file trigger a review of its corresponding reference entry.
+- Test instructions for each tool. Don't assume every agent reads or imports the same files.
+- Each rule must say whether it's enforced by CI, only in agent PRs, in local hooks, or through manual review.
 
-### 11.1 Dívida de lint
+### 11.1 Lint debt
 
-Uma regra que falharia em código existente deve ser adotada gradualmente. Exemplo: bloquear novas non-null assertions em diretórios limpos enquanto as antigas são corrigidas por módulo, com testes. Se forem permitidas exceções, elas precisam de motivo verificável, e o estado de cobertura parcial deve ser público. A mesma ideia vale para variáveis locais sem uso, *unsafe casts* e imports proibidos.
+A new rule that would fail existing code must be adopted gradually. For example, prohibit new non-null assertions in clean directories while addressing existing assertions module by module, with tests. Any exception needs a verifiable reason, and partial coverage must be documented. The same applies to unused locals, unsafe casts, and forbidden imports.
 
-Não declarar um gate como ativo até verificar seu comportamento real no CI, com o código e a versão de ferramenta empregados pelo projeto.
+Don't call a gate active until you've verified its behavior in CI with the project's actual code and tool versions.
 
-## 12. Decisões que continuam humanas
+## 12. Decisions that remain human
 
-Aumento de autonomia não transfere à IA toda responsabilidade de produto e operação. Permanecem sujeitos a aprovação humana, conforme o contexto: mudanças de preços ou contratos, decisões com impacto econômico relevante, regras de negócio ambíguas, exceções de segurança, migrations destrutivas, políticas de acesso, redefinição de tiers e ampliação de permissões.
+More autonomy doesn't transfer all product and operational responsibility to AI. Depending on the context, human approval remains necessary for pricing or contract changes, materially consequential business decisions, ambiguous business rules, security exceptions, destructive migrations, access policies, tier redefinitions, and expansions of permissions.
 
-A IA pode pesquisar, comparar, propor e implementar caminhos autorizados, mas não deve decidir sozinha qual risco residual a empresa aceita.
+AI can research, compare options, propose changes, and implement authorized approaches. It should not independently decide what residual risk the business accepts.
 
-## 13. Checklist antes de habilitar automerge
+## 13. Checklist before enabling auto-merge
 
-- [ ] Classificador recebe arquivos, renames, conteúdo adicionado/removido e impacto provável.
-- [ ] Política foi aprovada por responsáveis humanos e está versionada.
-- [ ] Fontes normativas e scripts de gates estão protegidos.
-- [ ] Checks de segurança e CI estão realmente rodando.
-- [ ] Revisor independente foi testado com exemplos positivos e negativos.
-- [ ] Contrato de parecer valida dados, checklist e CQS, sem confiar no LLM.
-- [ ] Evidências são invalidadas quando HEAD ou base exigem nova verificação.
-- [ ] Permissões reais e bypass do GitHub foram auditados.
-- [ ] Classe de mudança está explicitamente elegível.
-- [ ] A conta de merge usa privilégios mínimos e não contorna rulesets.
-- [ ] Telemetria e runbook de rollback estão operacionais.
-- [ ] Kill switch e suspensão por classe foram exercitados.
-- [ ] Shadow mode foi comparado com resultados humanos.
-- [ ] Existe responsável humano pela política, exceções e incidentes.
+- [ ] The classifier examines touched files, renames, added/removed content, and likely impact.
+- [ ] Human owners have approved and versioned the policy.
+- [ ] Normative instructions and gate scripts are protected.
+- [ ] CI and security checks are actually running.
+- [ ] The independent reviewer has been tested on positive and negative cases.
+- [ ] The review contract validates data, checklist, and quality score without blindly trusting the LLM.
+- [ ] Evidence is invalidated when HEAD or base changes require revalidation.
+- [ ] Actual GitHub permissions and bypass paths have been audited.
+- [ ] The change class is explicitly eligible.
+- [ ] The merge account has least-privilege access and cannot bypass rulesets.
+- [ ] Telemetry and a rollback runbook are operational.
+- [ ] The kill switch and per-class suspension mechanisms have been exercised.
+- [ ] Shadow-mode decisions have been compared with human outcomes.
+- [ ] A human is accountable for policy, exceptions, and incidents.
 
-**Se uma dessas condições for obrigatória para a classe e não estiver verificada, não habilitar automerge.**
+**If a condition is required for the class and hasn't been verified, don't enable auto-merge.**
 
-## 14. O que ainda precisa ser validado em cada adoção
+## 14. What every adoption still needs to validate
 
-Este documento **não** confirma para nenhum repositório concreto: configuração de branch protection, permissão de bots, cobertura de CI, modelos de revisão, disponibilidade de merge queue, validade de critérios, métricas de produção, limites de risco ou capacidade de rollback.
+This document **does not** verify any particular repository's branch protection, bot permissions, CI coverage, review models, merge-queue availability, policy criteria, production metrics, risk thresholds, or rollback capability.
 
-O trabalho de implementação começa com um diagnóstico verificável da infraestrutura existente. Soluções devem ser menores que o problema e construídas preferencialmente com ferramentas que a equipe já mantém.
+Implementation starts with a verifiable assessment of the existing infrastructure. Keep the solution smaller than the problem, and prefer tools the team already operates.
 
-## 15. Referências
+## 15. References
 
-- Anthropic, [How the Claude Code team does code review](https://claude.dev/blog/solving-code-review-at-anthropic/), 15/10/2026 — revisão em camadas, tempo humano, matrizes de risco, rollback.
-- Anthropic, [Redesigning source control at Anthropic](https://www.anthropic.com/research/redesigning-source-control), 13/10/2026 — o gargalo de infraestrutura e a escala de integração. **Não** é uma recomendação para substituir Git em projetos pequenos.
-- OpenAI, [Harness engineering: leveraging Codex in an agent-first world](https://openai.com/index/harness-engineering/), 11/02/2026 — ambiente legível para agentes, código verificável e documentação como mapa.
+- Anthropic, [How the Claude Code team does code review](https://claude.dev/blog/solving-code-review-at-anthropic/), October 15, 2026 — layered reviews, human time, risk matrices, rollback.
+- Anthropic, [Redesigning source control at Anthropic](https://www.anthropic.com/research/redesigning-source-control), October 13, 2026 — infrastructure bottlenecks and integration at scale. **Not** a recommendation for small teams to replace Git.
+- OpenAI, [Harness engineering: leveraging Codex in an agent-first world](https://openai.com/index/harness-engineering/), February 11, 2026 — agent-readable environments, verifiable code, documentation as a map.
 
-**Atribuição:** os princípios publicados pelas empresas acima inspiraram partes da proposta. Os tiers, checks, passos de rollout e controles descritos aqui são uma elaboração independente, não um manual oficial de qualquer fornecedor.
+**Attribution:** those companies' published principles informed parts of this proposal. The tiers, checks, rollout stages, and controls described here are an independent adaptation, not an official handbook from any of those companies.
